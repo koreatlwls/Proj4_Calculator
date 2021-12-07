@@ -5,11 +5,15 @@ import android.os.Bundle
 import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.style.ForegroundColorSpan
+import android.view.LayoutInflater
 import android.view.View
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.isVisible
+import androidx.room.Room
+import com.example.proj4_calculator.model.History
 import java.lang.NumberFormatException
-import kotlin.math.exp
 
 class MainActivity : AppCompatActivity() {
 
@@ -21,12 +25,28 @@ class MainActivity : AppCompatActivity() {
         findViewById<TextView>(R.id.resultTextView)
     }
 
+    private val historyLayout: View by lazy {
+        findViewById<View>(R.id.historyLayout)
+    }
+
+    private val historyLinearLayout: LinearLayout by lazy {
+        findViewById<LinearLayout>(R.id.historyLinearLayout)
+    }
+
+    lateinit var db: AppDatabase
+
     private var isOperator = false
     private var hasOperator = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+
+        db = Room.databaseBuilder(
+            applicationContext,
+            AppDatabase::class.java,
+            "historyDB"
+        ).build()
     }
 
     fun buttonClicked(v: View) {
@@ -108,11 +128,11 @@ class MainActivity : AppCompatActivity() {
     fun resultButtonClicked(v: View) {
         val expressionTexts = expressionTextView.text.split(" ")
 
-        if(expressionTextView.text.isEmpty() || expressionTexts.size == 1){
+        if (expressionTextView.text.isEmpty() || expressionTexts.size == 1) {
             return
         }
 
-        if(expressionTexts.size != 3 && hasOperator){
+        if (expressionTexts.size != 3 && hasOperator) {
             Toast.makeText(this, "아직 완성되지 않은 수식입니다.", Toast.LENGTH_SHORT).show()
             return
         }
@@ -124,6 +144,10 @@ class MainActivity : AppCompatActivity() {
 
         val expressionText = expressionTextView.text.toString()
         val resultText = calculateExpression()
+
+        Thread(Runnable {
+            db.historyDao().insertHistory(History(null, expressionText, resultText))
+        }).start()
 
         resultTextView.text = ""
         expressionTextView.text = resultText
@@ -163,8 +187,35 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun historyButtonClicked(v: View) {
+        historyLayout.isVisible = true
+        historyLinearLayout.removeAllViews()
 
+        Thread(Runnable {
+            db.historyDao().getAll().reversed().forEach {
+                runOnUiThread {
+                    val historyView =
+                        LayoutInflater.from(this).inflate(R.layout.history_row, null, false)
+                    historyView.findViewById<TextView>(R.id.expressionTextView).text = it.expression
+                    historyView.findViewById<TextView>(R.id.resultTextView).text = "= ${it.result}"
+
+                    historyLinearLayout.addView(historyView)
+                }
+            }
+        }).start()
     }
+
+    fun closeHistoryButtonClicked(v: View) {
+        historyLayout.isVisible = false
+    }
+
+    fun historyClearButtonClicked(v: View) {
+        historyLinearLayout.removeAllViews()
+
+        Thread(Runnable {
+            db.historyDao().deleteAll()
+        }).start()
+    }
+
 }
 
 fun String.isNumber(): Boolean {
